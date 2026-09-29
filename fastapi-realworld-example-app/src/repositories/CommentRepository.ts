@@ -1,0 +1,86 @@
+import { prisma } from './prisma';
+
+export interface CommentResponse {
+  id: number;
+  createdAt: Date;
+  updatedAt: Date;
+  body: string;
+  author: {
+    username: string;
+    bio: string | null;
+    image: string | null;
+    following: boolean;
+  };
+}
+
+export class CommentRepository {
+  private static mapComment(comment: any, currentUserId?: number): CommentResponse {
+    const isFollowing = currentUserId
+      ? comment.author.followers.some((f: any) => f.id === currentUserId)
+      : false;
+
+    return {
+      id: comment.id,
+      createdAt: comment.createdAt,
+      updatedAt: comment.updatedAt,
+      body: comment.body,
+      author: {
+        username: comment.author.username,
+        bio: comment.author.bio,
+        image: comment.author.image,
+        following: isFollowing,
+      },
+    };
+  }
+
+  static async create(body: string, slug: string, authorId: number): Promise<CommentResponse | null> {
+    const article = await prisma.article.findUnique({ where: { slug } });
+    if (!article) return null;
+
+    const comment = await prisma.comment.create({
+      data: {
+        body,
+        articleId: article.id,
+        authorId,
+      },
+      include: {
+        author: {
+          include: { followers: true },
+        },
+      },
+    });
+
+    return this.mapComment(comment, authorId);
+  }
+
+  static async getComments(slug: string, currentUserId?: number): Promise<CommentResponse[] | null> {
+    const article = await prisma.article.findUnique({ where: { slug } });
+    if (!article) return null;
+
+    const comments = await prisma.comment.findMany({
+      where: { articleId: article.id },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        author: {
+          include: { followers: true },
+        },
+      },
+    });
+
+    return comments.map((c) => this.mapComment(c, currentUserId));
+  }
+
+  static async delete(id: number, slug: string, currentUserId: number): Promise<boolean> {
+    const comment = await prisma.comment.findFirst({
+      where: { id, article: { slug } },
+    });
+    if (!comment) return false;
+
+    if (comment.authorId !== currentUserId) {
+      throw new Error('Forbidden');
+    }
+
+    await prisma.comment.delete({ where: { id } });
+    return true;
+  }
+}

@@ -1,0 +1,50 @@
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_USER: test
+          POSTGRES_DB: test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v3
+        with:
+          github_token: ${{ secrets.RELEASE_GITHUB_TOKEN }}
+      - name: uv cache
+        uses: actions/cache@v5
+        with:
+          path: /root/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock') }}
+      - name: sonar cache
+        uses: actions/cache@v5
+        with:
+          path: /root/.sonar/cache
+          key: ${{ runner.os }}-sonar
+      - run: "mise ci ::: scan"
+        env:
+          DB_HOST: postgres
+          DB_PORT: 5432
+          DB_DATABASE: test
+          DB_USERNAME: test
+          DB_PASSWORD: test
+          JWT_SECRET_KEY: "super secret key"
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+      - uses: https://gitea.okami101.io/okami101/actions/docker@main
+        with:
+          password: ${{ secrets.CONTAINER_REGISTRY_PASSWORD }}
+          gitea-token: ${{ secrets.RELEASE_TOKEN }}
+          release: true

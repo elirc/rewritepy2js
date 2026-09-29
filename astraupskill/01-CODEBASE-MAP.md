@@ -1,0 +1,10 @@
+# Codebase map: one delete request
+
+Start at [`articles.ts`](../fastapi-realworld-example-app/src/routes/articles.ts), where the route pattern is `articles/:slug/comments/:id`. The handler obtains `req.user!.id` after `authenticate`, parses the URL id, and delegates. Success ends with HTTP 204. A false repository result becomes 404. An `Error('Forbidden')` becomes 403; other errors go to Express `next`. This is a useful map because each status has a different owner.
+
+The repository in [`CommentRepository.ts`](../fastapi-realworld-example-app/src/repositories/CommentRepository.ts) is the domain/data boundary. `create` and `getComments` first resolve an article by slug. The corrected `delete` now follows the same identity rule: it asks Prisma for a comment whose numeric id and related article slug both match. Prisma's client is imported from `./prisma`, which makes it easy to replace with a test double without copying repository logic. The method then checks `authorId`, calls `comment.delete({ where: { id } })`, and returns true.
+
+The schema links `Comment.articleId` to `Article.id` while `Article.slug` is unique. That means the URL slug is a unique public identifier at lookup time, and the integer comment id is only unique within the whole database; both values are needed to identify the nested resource requested by the client. The original snapshot shows the missing predicate. The test at [`tests/comment-delete-boundary.test.mjs`](../tests/comment-delete-boundary.test.mjs) records the exact `findFirst` and `delete` arguments, then executes the registered DELETE handler with router and response doubles to check the slug crossing the layer boundary. This is a source-level integration seam, not a mounted server test.
+
+
+When mapping unfamiliar CRUD code, follow values rather than filenames: `slug` begins in the path, crosses the route call, becomes a Prisma relation filter, and affects the write decision. `currentUserId` begins in authentication and becomes an ownership comparison. That value trace exposes the original bug faster than reading every schema model.
